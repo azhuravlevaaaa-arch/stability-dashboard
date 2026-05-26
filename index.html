@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Трекер стабильности образцов</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Лаборатория / термошкаф</p>
+        <h1>Трекер стабильности</h1>
+        <p id="updatedAt" class="muted">Загрузка данных...</p>
+      </div>
+      <div class="header-actions">
+        <a class="button secondary" href="https://docs.google.com/spreadsheets/d/1WbcOhC5qEGY4bOIZvWWQPKp9FgCiHxjWW-r6FnKYLdY/edit?gid=0#gid=0" target="_blank" rel="noreferrer">Google Sheets</a>
+        <a class="button secondary" href="https://docs.google.com/spreadsheets/d/1lccp_Iw-YHpwX3ewPHcVabhrUr1m3_S5shLq0UbufCY/edit?usp=sharing" target="_blank" rel="noreferrer">Источник данных</a>
+        <button id="exportMeasurements" class="button primary" type="button">Экспорт CSV</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Разделы">
+      <button class="tab active" type="button" data-view="dashboard">Сегодня</button>
+      <button class="tab" type="button" data-view="samples">Все образцы</button>
+      <button class="tab" type="button" data-view="entry">Внести измерение</button>
+      <button class="tab" type="button" data-view="links">Ссылки</button>
+      <button class="tab" type="button" data-view="sources">Источники</button>
+    </nav>
+
+    <main>
+      <section class="summary" aria-label="Сводка">
+        <article class="summary-card" data-status="all" tabindex="0" role="button">
+          <span id="totalSamples">0</span>
+          <p>образцов в трекере</p>
+        </article>
+        <article class="summary-card danger" data-status="overdue" tabindex="0" role="button">
+          <span id="overdueCount">0</span>
+          <p>просрочено</p>
+        </article>
+        <article class="summary-card warning" data-status="today" tabindex="0" role="button">
+          <span id="todayCount">0</span>
+          <p>сегодня</p>
+        </article>
+        <article class="summary-card calm" data-status="soon" tabindex="0" role="button">
+          <span id="nextCount">0</span>
+          <p>следующие 7 дней</p>
+        </article>
+        <article class="summary-card" data-view-shortcut="entry" tabindex="0" role="button">
+          <span id="draftCount">0</span>
+          <p>локальных внесений</p>
+        </article>
+        <article class="summary-card" data-view-shortcut="links" tabindex="0" role="button">
+          <span id="linkDraftCount">0</span>
+          <p>добавленных ссылок</p>
+        </article>
+      </section>
+
+      <section class="controls" aria-label="Фильтры">
+        <div class="field search-wrap">
+          <label for="search">Поиск</label>
+          <input id="search" type="search" placeholder="Название, группа, pH, комментарий" />
+        </div>
+        <div class="field">
+          <label for="statusFilter">Статус</label>
+          <select id="statusFilter">
+            <option value="all">Все</option>
+            <option value="overdue">Просрочено</option>
+            <option value="today">Сегодня</option>
+            <option value="soon">Ближайшие 7 дней</option>
+            <option value="missing">Без измерений</option>
+            <option value="done">Закрыто</option>
+            <option value="future">Позже</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="groupFilter">Группа</label>
+          <select id="groupFilter">
+            <option value="all">Все группы</option>
+          </select>
+        </div>
+      </section>
+
+      <section id="dashboardView" class="view active">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Очередь контроля</p>
+            <h2>Что проверить в первую очередь</h2>
+          </div>
+          <p class="muted">Сначала просроченные, затем сегодняшние и ближайшие точки.</p>
+        </div>
+        <div id="dueCards" class="cards"></div>
+      </section>
+
+      <section id="samplesView" class="view">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Реестр</p>
+            <h2>Все образцы</h2>
+          </div>
+          <p id="sampleCountLabel" class="muted"></p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Образец</th>
+                <th>Группа</th>
+                <th>Постановка</th>
+                <th>Последнее</th>
+                <th>Ближайшее</th>
+                <th>Статус</th>
+                <th>Протокол</th>
+              </tr>
+            </thead>
+            <tbody id="sampleRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="entryView" class="view">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Новая запись</p>
+            <h2>Внести измерение</h2>
+          </div>
+          <p class="muted">Запись сохранится в браузере; если у образца есть протокол, ссылка попадет отдельным столбцом в CSV.</p>
+        </div>
+        <form id="measurementForm" class="entry-form">
+          <div class="field wide">
+            <label for="sampleInput">Образец</label>
+            <input id="sampleInput" name="sample" list="sampleList" required placeholder="Начните вводить название" />
+            <datalist id="sampleList"></datalist>
+          </div>
+          <div class="field">
+            <label for="pointInput">Точка</label>
+            <select id="pointInput" name="point" required>
+              <option value="1д">1 день</option>
+              <option value="1нед">1 неделя</option>
+              <option value="2нед">2 недели</option>
+              <option value="4нед">4 недели</option>
+              <option value="8нед">8 недель</option>
+              <option value="12нед">12 недель</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="dateInput">Дата измерения</label>
+            <input id="dateInput" name="date" type="date" required />
+          </div>
+          <div class="field">
+            <label for="temperatureInput">T, °C</label>
+            <select id="temperatureInput" name="temperature">
+              <option value="40">40</option>
+              <option value="23">23</option>
+              <option value="5">5</option>
+              <option value="">Не указано</option>
+            </select>
+          </div>
+          <div class="field wide">
+            <label for="targetSheetInput">Лист Google Sheets</label>
+            <input id="targetSheetInput" name="targetSheet" placeholder="Xanthan Gum SFT 1% 5% щелочи" />
+          </div>
+          <div class="field">
+            <label for="phInput">pH</label>
+            <input id="phInput" name="ph" inputmode="decimal" placeholder="5.40" />
+          </div>
+          <div class="field">
+            <label for="viscosityInput">Вязкость</label>
+            <input id="viscosityInput" name="viscosity" inputmode="decimal" placeholder="15000" />
+          </div>
+          <div class="field wide">
+            <label for="protocolPreviewInput">Ссылка на протокол</label>
+            <input id="protocolPreviewInput" name="protocol" readonly placeholder="Подставится автоматически, если ссылка есть" />
+          </div>
+          <div class="field wide">
+            <label for="appearanceInput">Внешний вид</label>
+            <input id="appearanceInput" name="appearance" placeholder="Однородный, прозрачный, без расслоения" />
+          </div>
+          <div class="field wide">
+            <label for="noteInput">Комментарий</label>
+            <textarea id="noteInput" name="note" rows="3" placeholder="Температура, шпиндель, скорость, наблюдения"></textarea>
+          </div>
+          <button class="button primary" type="submit">Сохранить запись</button>
+        </form>
+
+        <div class="section-head compact">
+          <div>
+            <p class="eyebrow">Черновик</p>
+            <h2>Локальные внесения</h2>
+          </div>
+          <div class="header-actions">
+            <button id="syncMeasurements" class="button primary" type="button">Внести в Google Sheets</button>
+            <button id="clearMeasurements" class="button secondary" type="button">Очистить</button>
+          </div>
+        </div>
+        <div class="sync-panel">
+          <div class="field wide">
+            <label for="appsScriptUrlInput">URL Apps Script</label>
+            <input id="appsScriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec" />
+          </div>
+          <p id="syncStatus" class="muted">После подключения Apps Script записи будут отправляться в Google Sheets.</p>
+        </div>
+        <div id="draftRows" class="draft-list"></div>
+      </section>
+
+      <section id="linksView" class="view">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Протоколы</p>
+            <h2>Добавить ссылку на исследование</h2>
+          </div>
+          <button id="exportLinks" class="button primary" type="button">Экспорт ссылок CSV</button>
+        </div>
+        <form id="protocolForm" class="entry-form">
+          <div class="field wide">
+            <label for="protocolSampleInput">Образец</label>
+            <input id="protocolSampleInput" name="sample" list="sampleList" required placeholder="Начните вводить название" />
+          </div>
+          <div class="field wide">
+            <label for="protocolUrlInput">Ссылка на исследование</label>
+            <input id="protocolUrlInput" name="url" type="url" required placeholder="https://docs.google.com/spreadsheets/d/..." />
+          </div>
+          <div class="field wide">
+            <label for="protocolNoteInput">Комментарий</label>
+            <input id="protocolNoteInput" name="note" placeholder="Например: протокол из файла Monquat D1221" />
+          </div>
+          <button class="button primary" type="submit">Сохранить ссылку</button>
+        </form>
+
+        <div class="section-head compact">
+          <div>
+            <p class="eyebrow">Черновик</p>
+            <h2>Добавленные ссылки</h2>
+          </div>
+          <button id="clearLinks" class="button secondary" type="button">Очистить</button>
+        </div>
+        <div id="linkRows" class="draft-list"></div>
+      </section>
+
+      <section id="sourcesView" class="view">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Аудит источников</p>
+            <h2>Файлы и сопоставление</h2>
+          </div>
+          <p id="sourceAuditLabel" class="muted"></p>
+        </div>
+        <div class="source-grid">
+          <article>
+            <span id="sourceCount">0</span>
+            <p>Excel-файлов разобрано</p>
+          </article>
+          <article>
+            <span id="matchedCount">0</span>
+            <p>образцов найдены в файлах</p>
+          </article>
+          <article class="warning">
+            <span id="unmatchedCount">0</span>
+            <p>нужны ручные проверки</p>
+          </article>
+        </div>
+        <div class="sources-layout">
+          <div>
+            <h3>Источники с измерениями</h3>
+            <div id="sourceList" class="source-list"></div>
+          </div>
+          <div>
+            <h3>Не сопоставилось автоматически</h3>
+            <div id="unmatchedList" class="source-list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <template id="sampleCardTemplate">
+      <article class="sample-card">
+        <div class="sample-head">
+          <div>
+            <p class="group"></p>
+            <h3></h3>
+          </div>
+          <span class="badge"></span>
+        </div>
+        <dl class="meta">
+          <div>
+            <dt>Постановка</dt>
+            <dd class="start-date"></dd>
+          </div>
+          <div>
+            <dt>Последнее</dt>
+            <dd class="last-measurement"></dd>
+          </div>
+          <div>
+            <dt>Ближайшее</dt>
+            <dd class="next-point"></dd>
+          </div>
+        </dl>
+        <div class="timeline"></div>
+        <div class="latest"></div>
+        <div class="card-actions">
+          <button class="button secondary add-measurement" type="button">Внести</button>
+          <button class="button secondary add-protocol" type="button">Добавить ссылку</button>
+          <a class="protocol" target="_blank" rel="noreferrer">Протокол</a>
+        </div>
+      </article>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
