@@ -1,5 +1,6 @@
 const MEASUREMENTS_SHEET = "Внесенные измерения";
 const LINKS_SHEET = "Добавленные ссылки";
+const PROTOCOL_MONITORING_SHEET = "Мониторинг";
 
 function doPost(e) {
   const payload = JSON.parse(e.postData.contents || "{}");
@@ -8,9 +9,22 @@ function doPost(e) {
 
   try {
     if (payload.type === "measurement") {
+      const warnings = [];
       appendMeasurement_(payload);
-      upsertMatrixMeasurements_(payload);
-      return json_({ ok: true, type: "measurement" });
+
+      try {
+        appendProtocolMonitoring_(payload);
+      } catch (error) {
+        warnings.push("Protocol monitoring: " + error.message);
+      }
+
+      try {
+        upsertMatrixMeasurements_(payload);
+      } catch (error) {
+        warnings.push("Matrix: " + error.message);
+      }
+
+      return json_({ ok: true, type: "measurement", warnings });
     }
     if (payload.type === "protocolLink") {
       appendProtocolLink_(payload);
@@ -20,6 +34,39 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function appendProtocolMonitoring_(payload) {
+  const protocolSpreadsheet = getProtocolSpreadsheet_(payload.protocol);
+  if (!protocolSpreadsheet) return;
+
+  const sheet = getOrCreateSheetInSpreadsheet_(protocolSpreadsheet, PROTOCOL_MONITORING_SHEET, [
+    "Дата записи",
+    "Образец",
+    "Точка",
+    "Дата измерения",
+    "T, °C",
+    "pH",
+    "Вязкость",
+    "Внешний вид",
+    "Комментарий",
+    "Лист Google Sheets",
+    "Ссылка на протокол",
+  ]);
+
+  sheet.appendRow([
+    new Date(),
+    payload.sample || "",
+    payload.point || "",
+    payload.date || "",
+    payload.temperature || "",
+    payload.ph || "",
+    payload.viscosity || "",
+    payload.appearance || "",
+    payload.note || "",
+    payload.targetSheet || "",
+    payload.protocol || "",
+  ]);
 }
 
 function appendMeasurement_(payload) {
@@ -53,16 +100,16 @@ function appendMeasurement_(payload) {
 
 function upsertMatrixMeasurements_(payload) {
   if (!payload.targetSheet || !payload.temperature || !payload.date) return;
+  const spreadsheet = getProtocolSpreadsheet_(payload.protocol) || SpreadsheetApp.getActive();
   if (payload.viscosity !== "" && payload.viscosity != null) {
-    upsertMatrixValue_(payload.targetSheet, payload.sample, payload.date, payload.temperature, "Вязкость, 05", payload.viscosity);
+    upsertMatrixValue_(spreadsheet, payload.targetSheet, payload.sample, payload.date, payload.temperature, "Вязкость, 05", payload.viscosity);
   }
   if (payload.ph !== "" && payload.ph != null) {
-    upsertMatrixValue_(payload.targetSheet, payload.sample, payload.date, payload.temperature, "рН", payload.ph);
+    upsertMatrixValue_(spreadsheet, payload.targetSheet, payload.sample, payload.date, payload.temperature, "рН", payload.ph);
   }
 }
 
-function upsertMatrixValue_(sheetName, title, dateText, temperature, parameter, value) {
-  const spreadsheet = SpreadsheetApp.getActive();
+function upsertMatrixValue_(spreadsheet, sheetName, title, dateText, temperature, parameter, value) {
   const sheet = spreadsheet.getSheetByName(sheetName);
   if (!sheet) throw new Error("Sheet not found: " + sheetName);
 
@@ -161,8 +208,23 @@ function appendProtocolLink_(payload) {
   ]);
 }
 
+function getProtocolSpreadsheet_(protocolUrl) {
+  const id = getSpreadsheetIdFromUrl_(protocolUrl);
+  if (!id) return null;
+  return SpreadsheetApp.openById(id);
+}
+
+function getSpreadsheetIdFromUrl_(url) {
+  const match = String(url || "").match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : null;
+}
+
 function getOrCreateSheet_(name, headers) {
   const spreadsheet = SpreadsheetApp.getActive();
+  return getOrCreateSheetInSpreadsheet_(spreadsheet, name, headers);
+}
+
+function getOrCreateSheetInSpreadsheet_(spreadsheet, name, headers) {
   let sheet = spreadsheet.getSheetByName(name);
   if (!sheet) sheet = spreadsheet.insertSheet(name);
   if (sheet.getLastRow() === 0) sheet.appendRow(headers);

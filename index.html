@@ -124,7 +124,7 @@
             <p class="eyebrow">Новая запись</p>
             <h2>Внести измерение</h2>
           </div>
-          <p class="muted">Запись сохранится в браузере; если у образца есть протокол, ссылка попадет отдельным столбцом в CSV.</p>
+          <p class="muted">Запись сохранится в браузере; после отправки Apps Script добавит ее в главную таблицу и на лист Мониторинг внутри протокола.</p>
         </div>
         <form id="measurementForm" class="entry-form">
           <div class="field wide">
@@ -198,7 +198,7 @@
             <label for="appsScriptUrlInput">URL Apps Script</label>
             <input id="appsScriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec" />
           </div>
-          <p id="syncStatus" class="muted">После подключения Apps Script записи будут отправляться в Google Sheets.</p>
+          <p id="syncStatus" class="muted">После подключения Apps Script записи будут отправляться в главную таблицу и в лист Мониторинг по ссылке протокола.</p>
         </div>
         <div id="draftRows" class="draft-list"></div>
       </section>
