@@ -235,6 +235,13 @@ main {
   font-weight: 800;
 }
 
+.field-hint {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 input,
 select,
 textarea {
@@ -416,10 +423,18 @@ dd {
   background: var(--panel);
 }
 
+.selected-sample-card {
+  margin-bottom: 16px;
+}
+
+.selected-sample-card:empty {
+  display: none;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 980px;
+  min-width: 1120px;
 }
 
 th,
@@ -442,6 +457,17 @@ tr:last-child td {
   border-bottom: 0;
 }
 
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.table-actions .button {
+  padding: 8px 10px;
+  min-height: 34px;
+}
+
 .entry-form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -460,6 +486,23 @@ tr:last-child td {
 .source-list {
   display: grid;
   gap: 10px;
+}
+
+.sync-badge {
+  display: inline-flex;
+  width: max-content;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sync-badge.pending {
+  color: #8a5b00;
+  background: var(--warning-weak);
 }
 
 .sync-panel {

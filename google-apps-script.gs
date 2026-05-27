@@ -54,7 +54,7 @@ function appendProtocolMonitoring_(payload) {
     "Ссылка на протокол",
   ]);
 
-  sheet.appendRow([
+  const row = [
     new Date(),
     payload.sample || "",
     payload.point || "",
@@ -66,7 +66,8 @@ function appendProtocolMonitoring_(payload) {
     payload.note || "",
     payload.targetSheet || "",
     payload.protocol || "",
-  ]);
+  ];
+  appendUniqueMeasurementRow_(sheet, row, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 }
 
 function appendMeasurement_(payload) {
@@ -83,7 +84,7 @@ function appendMeasurement_(payload) {
     "Ссылка на протокол",
     "Комментарий",
   ]);
-  sheet.appendRow([
+  const row = [
     new Date(),
     payload.sample || "",
     payload.point || "",
@@ -95,7 +96,27 @@ function appendMeasurement_(payload) {
     payload.appearance || "",
     payload.protocol || "",
     payload.note || "",
-  ]);
+  ];
+  appendUniqueMeasurementRow_(sheet, row, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+}
+
+function appendUniqueMeasurementRow_(sheet, row, keyIndexes) {
+  const rowKey = makeRowKey_(row, keyIndexes);
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, Math.max(sheet.getLastColumn(), row.length)).getDisplayValues();
+    for (let i = 0; i < existing.length; i++) {
+      if (makeRowKey_(existing[i], keyIndexes) === rowKey) return false;
+    }
+  }
+  sheet.appendRow(row);
+  return true;
+}
+
+function makeRowKey_(row, indexes) {
+  return indexes
+    .map((index) => normalizeText_(row[index]))
+    .join("|");
 }
 
 function upsertMatrixMeasurements_(payload) {

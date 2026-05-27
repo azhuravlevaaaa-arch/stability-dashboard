@@ -19,6 +19,7 @@ const els = {
   views: document.querySelectorAll(".view"),
   dueCards: document.querySelector("#dueCards"),
   template: document.querySelector("#sampleCardTemplate"),
+  selectedSampleCard: document.querySelector("#selectedSampleCard"),
   sampleRows: document.querySelector("#sampleRows"),
   sampleCountLabel: document.querySelector("#sampleCountLabel"),
   totalSamples: document.querySelector("#totalSamples"),
@@ -34,6 +35,9 @@ const els = {
   sampleList: document.querySelector("#sampleList"),
   measurementForm: document.querySelector("#measurementForm"),
   sampleInput: document.querySelector("#sampleInput"),
+  dateInput: document.querySelector("#dateInput"),
+  pointInput: document.querySelector("#pointInput"),
+  pointAutoHint: document.querySelector("#pointAutoHint"),
   protocolPreviewInput: document.querySelector("#protocolPreviewInput"),
   protocolForm: document.querySelector("#protocolForm"),
   draftRows: document.querySelector("#draftRows"),
@@ -190,7 +194,7 @@ function renderDashboard() {
     .filter((sample) => ["overdue", "today", "soon", "missing"].includes(sample.status))
     .slice(0, 60);
   els.dueCards.textContent = "";
-  actionable.forEach(renderCard);
+  actionable.forEach((sample) => renderCard(sample, els.dueCards));
   if (!actionable.length) {
     els.dueCards.append(emptyNode("По этим фильтрам нет срочных проверок."));
   }
@@ -199,7 +203,11 @@ function renderDashboard() {
 function renderSampleRows() {
   const rows = filteredSamples();
   els.sampleRows.textContent = "";
+  els.selectedSampleCard.textContent = "";
   els.sampleCountLabel.textContent = `${rows.length} из ${samples.length}`;
+  if (rows.length === 1) {
+    renderCard(rows[0], els.selectedSampleCard);
+  }
   rows.forEach((sample) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -210,6 +218,12 @@ function renderSampleRows() {
       <td>${sample.nextPoint ? `${sample.nextPoint.label}, ${formatDate(sample.nextPoint.date)}` : "закрыто"}</td>
       <td>${statusLabel(sample.status)}</td>
       <td>${sample.protocol ? `<a href="${escapeAttr(sample.protocol)}" target="_blank" rel="noreferrer">открыть</a>` : `<button class="button secondary table-add-protocol" type="button">добавить</button>`}</td>
+      <td>
+        <div class="table-actions">
+          <button class="button secondary table-show-card" type="button">Карточка</button>
+          <button class="button primary table-add-measurement" type="button">Внести</button>
+        </div>
+      </td>
     `;
     const addProtocol = tr.querySelector(".table-add-protocol");
     if (addProtocol) {
@@ -219,6 +233,15 @@ function renderSampleRows() {
         document.querySelector("#protocolUrlInput").focus();
       });
     }
+    tr.querySelector(".table-show-card").addEventListener("click", () => {
+      els.selectedSampleCard.textContent = "";
+      renderCard(sample, els.selectedSampleCard);
+      els.selectedSampleCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    tr.querySelector(".table-add-measurement").addEventListener("click", () => {
+      fillMeasurementForm(sample);
+      activateView("entry");
+    });
     els.sampleRows.append(tr);
   });
 }
@@ -232,7 +255,7 @@ function renderStats(source) {
   els.linkDraftCount.textContent = protocolLinks.length;
 }
 
-function renderCard(sample) {
+function renderCard(sample, target = els.dueCards) {
   const node = els.template.content.cloneNode(true);
   node.querySelector("h3").textContent = sample.name;
   node.querySelector(".group").textContent = sample.group;
@@ -262,11 +285,8 @@ function renderCard(sample) {
 
   node.querySelector(".latest").textContent = latestText(sample);
   node.querySelector(".add-measurement").addEventListener("click", () => {
+    fillMeasurementForm(sample);
     activateView("entry");
-    document.querySelector("#sampleInput").value = sample.name;
-    document.querySelector("#pointInput").value = sample.nextPoint?.key || "1д";
-    document.querySelector("#dateInput").value = dateInputValue(new Date());
-    updateProtocolPreview();
   });
   node.querySelector(".add-protocol").addEventListener("click", () => {
     activateView("links");
@@ -282,7 +302,14 @@ function renderCard(sample) {
     protocol.remove();
   }
 
-  els.dueCards.append(node);
+  target.append(node);
+}
+
+function fillMeasurementForm(sample) {
+  els.sampleInput.value = sample.name;
+  els.dateInput.value = dateInputValue(new Date());
+  updateProtocolPreview();
+  updateAutoPoint();
 }
 
 function latestText(sample) {
@@ -306,8 +333,12 @@ function renderDrafts() {
   [...drafts].reverse().forEach((draft) => {
     const item = document.createElement("div");
     item.className = "draft-item";
+    const syncBadge = draft.syncedAt
+      ? `<span class="sync-badge">отправлено ${formatDateTime(draft.syncedAt)}</span>`
+      : `<span class="sync-badge pending">не отправлено</span>`;
     item.innerHTML = `
       <strong>${escapeHtml(draft.sample)} — ${pointLabel(draft.point)}, ${formatInputDate(draft.date)}</strong>
+      ${syncBadge}
       <span>T: ${escapeHtml(draft.temperature || "-")}°C | pH: ${escapeHtml(draft.ph || "-")} | вязкость: ${escapeHtml(draft.viscosity || "-")} | вид: ${escapeHtml(draft.appearance || "-")}</span>
       ${draft.targetSheet ? `<p class="muted">Лист: ${escapeHtml(draft.targetSheet)}</p>` : ""}
       ${draft.protocol ? `<p class="muted">Протокол: ${escapeHtml(draft.protocol)}</p>` : ""}
@@ -394,18 +425,22 @@ function fillSampleList(source) {
 
 function saveDraft(event) {
   event.preventDefault();
+  updateAutoPoint();
   const data = Object.fromEntries(new FormData(els.measurementForm).entries());
   const sample = samples.find((item) => item.name === data.sample);
   drafts.push({
+    id: `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     ...data,
     pointLabel: pointLabel(data.point),
     protocol: sample?.protocol || data.protocol || "",
+    syncedAt: "",
     createdAt: new Date().toISOString(),
   });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
   els.measurementForm.reset();
-  document.querySelector("#dateInput").value = dateInputValue(new Date());
+  els.dateInput.value = dateInputValue(new Date());
   updateProtocolPreview();
+  updateAutoPoint();
   rebuildSamples();
   renderAll();
 }
@@ -420,11 +455,17 @@ async function syncMeasurements() {
     els.syncStatus.textContent = "Нет локальных внесений для отправки.";
     return;
   }
+  const pendingDrafts = drafts.filter((draft) => !draft.syncedAt);
+  if (!pendingDrafts.length) {
+    els.syncStatus.textContent = "Все локальные внесения уже отправлены. Повторно не отправляю, чтобы не было дублей.";
+    return;
+  }
   localStorage.setItem(APPS_SCRIPT_URL_KEY, url);
-  els.syncStatus.textContent = "Отправляю данные в Google Sheets...";
+  els.syncStatus.textContent = `Отправляю новые записи в Google Sheets: ${pendingDrafts.length}...`;
+  els.syncMeasurements.disabled = true;
 
   try {
-    for (const draft of drafts) {
+    for (const draft of pendingDrafts) {
       await fetch(url, {
         method: "POST",
         mode: "no-cors",
@@ -435,10 +476,16 @@ async function syncMeasurements() {
           point: draft.pointLabel || pointLabel(draft.point),
         }),
       });
+      draft.syncedAt = new Date().toISOString();
     }
-    els.syncStatus.textContent = `Отправлено записей: ${drafts.length}. Проверь Google Sheets.`;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+    renderDrafts();
+    renderStats(samples);
+    els.syncStatus.textContent = `Отправлено новых записей: ${pendingDrafts.length}. Уже отправленные записи повторно не отправлялись.`;
   } catch (error) {
     els.syncStatus.textContent = `Не удалось отправить: ${error.message}`;
+  } finally {
+    els.syncMeasurements.disabled = false;
   }
 }
 
@@ -549,6 +596,41 @@ function updateProtocolPreview() {
   els.protocolPreviewInput.value = sample?.protocol || "";
 }
 
+function updateAutoPoint() {
+  const sample = samples.find((item) => item.name === els.sampleInput.value);
+  const measurementDate = parseInputDate(els.dateInput.value);
+  if (!sample || !measurementDate) {
+    els.pointAutoHint.textContent = "Выберите образец и дату — точка рассчитается автоматически.";
+    return;
+  }
+  if (!sample.startDate) {
+    els.pointAutoHint.textContent = "У образца нет даты постановки, поэтому точку нужно выбрать вручную.";
+    return;
+  }
+
+  const elapsedDays = diffDays(sample.startDate, measurementDate);
+  if (elapsedDays < 0) {
+    els.pointInput.value = "1д";
+    els.pointAutoHint.textContent = "Дата измерения раньше даты постановки — проверьте дату.";
+    return;
+  }
+
+  const selectedPoint = closestPointForDays(elapsedDays);
+  els.pointInput.value = selectedPoint.key;
+  const exactText = elapsedDays === selectedPoint.offset ? "" : `, ближайшая точка ${selectedPoint.offset} дн.`;
+  els.pointAutoHint.textContent = `Прошло ${elapsedDays} дн. от постановки — выбрана точка: ${selectedPoint.label}${exactText}.`;
+}
+
+function closestPointForDays(days) {
+  return POINTS.reduce((best, point) => {
+    const bestDistance = Math.abs(days - best.offset);
+    const pointDistance = Math.abs(days - point.offset);
+    if (pointDistance < bestDistance) return point;
+    if (pointDistance === bestDistance && point.offset > best.offset) return point;
+    return best;
+  }, POINTS[0]);
+}
+
 function activateView(view) {
   els.tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.view === view));
   els.views.forEach((section) => section.classList.toggle("active", section.id === `${view}View`));
@@ -614,6 +696,19 @@ function formatInputDate(value) {
   if (!value) return "";
   const [year, month, day] = value.split("-");
   return `${day}.${month}.${year}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function startOfDay(date) {
@@ -689,7 +784,11 @@ els.search.addEventListener("input", renderAll);
 els.statusFilter.addEventListener("change", renderAll);
 els.groupFilter.addEventListener("change", renderAll);
 els.measurementForm.addEventListener("submit", saveDraft);
-els.sampleInput.addEventListener("input", updateProtocolPreview);
+els.sampleInput.addEventListener("input", () => {
+  updateProtocolPreview();
+  updateAutoPoint();
+});
+els.dateInput.addEventListener("input", updateAutoPoint);
 els.protocolForm.addEventListener("submit", saveProtocolLink);
 els.exportMeasurements.addEventListener("click", exportDrafts);
 els.exportLinks.addEventListener("click", exportProtocolLinks);
@@ -707,8 +806,9 @@ els.summaryCards.forEach((card) => {
   });
 });
 
-document.querySelector("#dateInput").value = dateInputValue(new Date());
+els.dateInput.value = dateInputValue(new Date());
 els.appsScriptUrlInput.value = localStorage.getItem(APPS_SCRIPT_URL_KEY) || "";
+updateAutoPoint();
 renderDrafts();
 loadLocalAudits();
 loadSheet();

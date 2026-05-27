@@ -100,6 +100,7 @@
           </div>
           <p id="sampleCountLabel" class="muted"></p>
         </div>
+        <div id="selectedSampleCard" class="cards selected-sample-card"></div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -111,6 +112,7 @@
                 <th>Ближайшее</th>
                 <th>Статус</th>
                 <th>Протокол</th>
+                <th>Действия</th>
               </tr>
             </thead>
             <tbody id="sampleRows"></tbody>
@@ -142,6 +144,7 @@
               <option value="8нед">8 недель</option>
               <option value="12нед">12 недель</option>
             </select>
+            <p id="pointAutoHint" class="field-hint">Выберите образец и дату — точка рассчитается автоматически.</p>
           </div>
           <div class="field">
             <label for="dateInput">Дата измерения</label>
