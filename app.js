@@ -122,8 +122,16 @@ function enrichSample(row) {
       state: pointState(date, done),
     };
   });
-  const nextPoint = points.find((point) => !point.done) || null;
   const lastPoint = [...points].reverse().find((point) => point.done) || null;
+  const lastDoneIndex = lastPoint ? points.findIndex((point) => point.key === lastPoint.key) : -1;
+  if (lastDoneIndex > 0) {
+    points.forEach((point, index) => {
+      if (!point.done && index < lastDoneIndex) {
+        point.state = "skipped";
+      }
+    });
+  }
+  const nextPoint = points.find((point) => !point.done && point.state !== "skipped") || null;
   const status = sampleStatus(points);
 
   return {
@@ -152,7 +160,8 @@ function pointState(date, done) {
 }
 
 function sampleStatus(points) {
-  if (points.every((point) => point.done)) return "done";
+  const activePoints = points.filter((point) => point.state !== "skipped");
+  if (activePoints.every((point) => point.done)) return "done";
   if (points.some((point) => point.state === "overdue")) return "overdue";
   if (points.some((point) => point.state === "today")) return "today";
   if (points.some((point) => point.state === "soon")) return "soon";
@@ -725,6 +734,7 @@ function statusLabel(status) {
     done: "Закрыто",
     missing: "Нет данных",
     future: "Позже",
+    skipped: "Пропущено",
   }[status] || "В работе";
 }
 
@@ -739,6 +749,7 @@ function statusWeight(status) {
     soon: 2,
     missing: 3,
     future: 4,
+    skipped: 5,
     done: 5,
   }[status] ?? 6;
 }

@@ -410,6 +410,11 @@ dd {
   background: var(--calm-weak);
 }
 
+.point.skipped {
+  border-color: #d6dedb;
+  background: #f4f7f5;
+}
+
 .latest {
   color: var(--muted);
   font-size: 14px;
