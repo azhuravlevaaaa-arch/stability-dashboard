@@ -4,6 +4,7 @@ const TODAY = startOfDay(new Date());
 const STORAGE_KEY = "stability_measurement_drafts";
 const LINK_STORAGE_KEY = "stability_protocol_links";
 const APPS_SCRIPT_URL_KEY = "stability_apps_script_url";
+const DEFAULT_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyYWf3BEuTZVpYeaTeqjd2YGdEMOKqmq2VF7Tda882k90VNhDiQDpkSWwZ6g6ObFE_k7g/exec";
 
 const POINTS = [
   { key: "1д", label: "1 день", offset: 1 },
@@ -64,6 +65,14 @@ let sourceInventory = [];
 let sourceMatch = null;
 let drafts = loadDrafts();
 let protocolLinks = loadProtocolLinks();
+let sharedMeasurements = [];
+
+window.__handleMeasurements = (response) => {
+  if (!response?.ok) return;
+  sharedMeasurements = (response.measurements || []).map(normalizeSharedMeasurement).filter((item) => item.sample);
+  rebuildSamples();
+  renderAll();
+};
 
 window.__handleSheet = (response) => {
   const rows = response.table.rows.map((row) => {
@@ -104,16 +113,17 @@ function normalizeCell(cell) {
 function enrichSample(row) {
   const startDate = parseDate(row["Дата постановки"]);
   const points = POINTS.map((point) => {
-    const draft = latestDraftFor(row["Образец"], point.key);
-    const date = parseInputDate(draft?.date) || parseDate(row[`${point.key} - Дата`]) || addDays(startDate, point.offset);
+    const entry = latestMeasurementFor(row["Образец"], point.key);
+    const date = parseInputDate(entry?.date) || parseDate(row[`${point.key} - Дата`]) || addDays(startDate, point.offset);
     const measurement = {
-      ph: draft?.ph || row[`${point.key} - pH`] || "",
-      viscosity: draft?.viscosity || row[`${point.key} - Вязкость`] || "",
-      appearance: draft?.appearance || row[`${point.key} - Внешний вид`] || "",
-      note: draft?.note || "",
-      local: Boolean(draft),
+      ph: entry?.ph || row[`${point.key} - pH`] || "",
+      viscosity: entry?.viscosity || row[`${point.key} - Вязкость`] || "",
+      appearance: entry?.appearance || row[`${point.key} - Внешний вид`] || "",
+      note: entry?.note || "",
+      local: entry?.source === "local",
+      shared: entry?.source === "shared",
     };
-    const done = Boolean((draft || row[`${point.key} - Дата`]) && (measurement.ph || measurement.viscosity || measurement.appearance || measurement.note));
+    const done = Boolean((entry || row[`${point.key} - Дата`]) && (measurement.ph || measurement.viscosity || measurement.appearance || measurement.note));
     return {
       ...point,
       date,
@@ -329,6 +339,7 @@ function latestText(sample) {
   if (viscosity) parts.push(`вязкость: ${viscosity}`);
   if (appearance) parts.push(`вид: ${appearance}`);
   if (sample.lastPoint.measurement.local) parts.push("локально внесено");
+  if (sample.lastPoint.measurement.shared) parts.push("из Google Sheets");
   return parts.join(" | ") || sample.rawStatus || "Измерение внесено без деталей.";
 }
 
@@ -491,6 +502,7 @@ async function syncMeasurements() {
     renderDrafts();
     renderStats(samples);
     els.syncStatus.textContent = `Отправлено новых записей: ${pendingDrafts.length}. Уже отправленные записи повторно не отправлялись.`;
+    loadSharedMeasurements();
   } catch (error) {
     els.syncStatus.textContent = `Не удалось отправить: ${error.message}`;
   } finally {
@@ -510,6 +522,46 @@ function latestDraftFor(sampleName, pointKey) {
   return [...drafts].reverse().find((draft) => draft.sample === sampleName && draft.point === pointKey);
 }
 
+function latestMeasurementFor(sampleName, pointKey) {
+  return measurementEntries()
+    .filter((entry) => entry.sample === sampleName && entry.point === pointKey)
+    .sort((a, b) => measurementTime(a) - measurementTime(b))
+    .at(-1);
+}
+
+function measurementEntries() {
+  const localEntries = drafts.map((draft) => ({
+    ...draft,
+    point: pointKeyFromValue(draft.point),
+    source: "local",
+  }));
+  return [...sharedMeasurements, ...localEntries].filter((entry) => entry.point);
+}
+
+function normalizeSharedMeasurement(row) {
+  return {
+    sample: row["Образец"] || "",
+    point: pointKeyFromValue(row["Точка"]),
+    date: normalizeMeasurementDate(row["Дата измерения"]),
+    temperature: row["T, °C"] || "",
+    targetSheet: row["Лист Google Sheets"] || "",
+    ph: row["pH"] || "",
+    viscosity: row["Вязкость"] || "",
+    appearance: row["Внешний вид"] || "",
+    protocol: row["Ссылка на протокол"] || "",
+    note: row["Комментарий"] || "",
+    createdAt: row["Дата записи"] || "",
+    source: "shared",
+  };
+}
+
+function measurementTime(entry) {
+  const created = new Date(entry.createdAt || "");
+  if (!Number.isNaN(created.getTime())) return created.getTime();
+  const measured = parseInputDate(entry.date);
+  return measured ? measured.getTime() : 0;
+}
+
 function loadProtocolLinks() {
   try {
     return JSON.parse(localStorage.getItem(LINK_STORAGE_KEY) || "[]");
@@ -521,6 +573,32 @@ function loadProtocolLinks() {
 function protocolFor(sampleName, originalProtocol = "") {
   const link = [...protocolLinks].reverse().find((item) => item.sample === sampleName);
   return link?.url || originalProtocol || "";
+}
+
+function pointKeyFromValue(value) {
+  const text = String(value || "").trim().toLowerCase().replace(/ё/g, "е");
+  if (!text) return "";
+  const direct = POINTS.find((point) => point.key.toLowerCase() === text);
+  if (direct) return direct.key;
+  const byLabel = POINTS.find((point) => point.label.toLowerCase().replace(/ё/g, "е") === text);
+  if (byLabel) return byLabel.key;
+  if (/^1\s*д/.test(text)) return "1д";
+  if (/^1\s*нед/.test(text)) return "1нед";
+  if (/^2\s*нед/.test(text)) return "2нед";
+  if (/^4\s*нед/.test(text)) return "4нед";
+  if (/^8\s*нед/.test(text)) return "8нед";
+  if (/^12\s*нед/.test(text)) return "12нед";
+  return "";
+}
+
+function normalizeMeasurementDate(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const ru = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (ru) return `${ru[3]}-${ru[2].padStart(2, "0")}-${ru[1].padStart(2, "0")}`;
+  return text;
 }
 
 function refreshProtocolLinksInSamples() {
@@ -791,6 +869,21 @@ function loadSheet() {
   document.body.append(script);
 }
 
+function loadSharedMeasurements() {
+  const appsScriptUrl = els.appsScriptUrlInput.value.trim();
+  if (!appsScriptUrl) return;
+  const script = document.createElement("script");
+  const url = new URL(appsScriptUrl);
+  url.searchParams.set("action", "measurements");
+  url.searchParams.set("callback", "__handleMeasurements");
+  url.searchParams.set("_", Date.now().toString());
+  script.src = url.toString();
+  script.onerror = () => {
+    els.syncStatus.textContent = "Не удалось загрузить общие измерения из Google Sheets.";
+  };
+  document.body.append(script);
+}
+
 els.search.addEventListener("input", renderAll);
 els.statusFilter.addEventListener("change", renderAll);
 els.groupFilter.addEventListener("change", renderAll);
@@ -818,8 +911,9 @@ els.summaryCards.forEach((card) => {
 });
 
 els.dateInput.value = dateInputValue(new Date());
-els.appsScriptUrlInput.value = localStorage.getItem(APPS_SCRIPT_URL_KEY) || "";
+els.appsScriptUrlInput.value = localStorage.getItem(APPS_SCRIPT_URL_KEY) || DEFAULT_APPS_SCRIPT_URL;
 updateAutoPoint();
 renderDrafts();
 loadLocalAudits();
 loadSheet();
+loadSharedMeasurements();

@@ -2,6 +2,15 @@ const MEASUREMENTS_SHEET = "Внесенные измерения";
 const LINKS_SHEET = "Добавленные ссылки";
 const PROTOCOL_MONITORING_SHEET = "Мониторинг";
 
+function doGet(e) {
+  const action = e.parameter.action || "";
+  const callback = e.parameter.callback || "";
+  if (action === "measurements") {
+    return jsonp_({ ok: true, measurements: listMeasurements_() }, callback);
+  }
+  return jsonp_({ ok: false, error: "Unknown action" }, callback);
+}
+
 function doPost(e) {
   const payload = JSON.parse(e.postData.contents || "{}");
   const lock = LockService.getScriptLock();
@@ -34,6 +43,32 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function listMeasurements_() {
+  const sheet = getOrCreateSheet_(MEASUREMENTS_SHEET, [
+    "Дата записи",
+    "Образец",
+    "Точка",
+    "Дата измерения",
+    "T, °C",
+    "Лист Google Sheets",
+    "pH",
+    "Вязкость",
+    "Внешний вид",
+    "Ссылка на протокол",
+    "Комментарий",
+  ]);
+  const values = sheet.getDataRange().getDisplayValues();
+  if (values.length < 2) return [];
+  const headers = values[0];
+  return values.slice(1).map((row) => {
+    const item = {};
+    headers.forEach((header, index) => {
+      item[header] = row[index] || "";
+    });
+    return item;
+  });
 }
 
 function appendProtocolMonitoring_(payload) {
@@ -256,4 +291,13 @@ function json_(data) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function jsonp_(data, callback) {
+  if (callback) {
+    return ContentService
+      .createTextOutput(callback + "(" + JSON.stringify(data) + ");")
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return json_(data);
 }
